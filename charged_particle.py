@@ -11,7 +11,7 @@ import numpy as np
 from scipy.constants import physical_constants
 from scipy.integrate import quad
 
-class energyDistribution:
+class EnergyDistribution:
     """
     This class contains functions related to the energy distribution
     of secondary particles.  The parameterizations used are those of
@@ -31,7 +31,7 @@ class energyDistribution:
     ll = np.log(1.e-1)
     ul = np.log(1.e+6)
     
-    def __init__(s,part,t):
+    def __init__(self,part,t):
         """
         Set the parameterization constants for this type of particle. The normalization
         constant is determined for the given shower stage, (which can be changed later).
@@ -40,44 +40,44 @@ class energyDistribution:
             particle = The name of the distribution of particles to create
             t = The shower stage for which to do the claculation
         """
-        s.p = s.pt[part]
-        s.t = t
-        s.normalize(t)
+        self.p = self.pt[part]
+        self.t = t
+        self.normalize(t)
 
     # Functions for the top level parameters
-    def _set_A0(s,p,t):
-        s.A0 = s.A1*s.pz[p,s.pm['A00']] * np.exp( s.pz[p,s.pm['A01']]*t - s.pz[p,s.pm['A02']]*t**2)
-    def _set_e1(s,p,t):
-        s.e1 = s.pz[p,s.pm['e11']] - s.pz[p,s.pm['e12']]*t
-    def _set_e2(s,p,t):
-        s.e2 = s.pz[p,s.pm['e21']] - s.pz[p,s.pm['e22']]*t
-    def _set_g1(s,p,t):
-        s.g1 = s.pz[p,s.pm['g11']]
-    def _set_g2(s,p,t):
-        s.g2 = 1 + s.pz[p,s.pm['g21']]
+    def _set_A0(self,p,t):
+        self.A0 = self.A1*self.pz[p,self.pm['A00']] * np.exp( self.pz[p,self.pm['A01']]*t - self.pz[p,self.pm['A02']]*t**2)
+    def _set_e1(self,p,t):
+        self.e1 = self.pz[p,self.pm['e11']] - self.pz[p,self.pm['e12']]*t
+    def _set_e2(self,p,t):
+        self.e2 = self.pz[p,self.pm['e21']] - self.pz[p,self.pm['e22']]*t
+    def _set_g1(self,p,t):
+        self.g1 = self.pz[p,self.pm['g11']]
+    def _set_g2(self,p,t):
+        self.g2 = 1 + self.pz[p,self.pm['g21']]*t
 
-    def normalize(s,t):
-        p = s.pt['Tot']
-        s.A1 = 1.
-        s._set_A0(p,t)
-        s._set_e1(p,t)
-        s._set_e2(p,t)
-        s._set_g1(p,t)
-        s._set_g2(p,t)
-        intgrl,eps = quad(s.spectrum,s.ll,s.ul)
-        s.A1 = 1/intgrl
-        p = s.p
-        s._set_A0(p,t)
-        s._set_e1(p,t)
-        s._set_e2(p,t)
-        s._set_g1(p,t)
-        s._set_g2(p,t)
+    def normalize(self,t):
+        p = self.pt['Tot']
+        self.A1 = 1.
+        self._set_A0(p,t)
+        self._set_e1(p,t)
+        self._set_e2(p,t)
+        self._set_g1(p,t)
+        self._set_g2(p,t)
+        intgrl,eps = quad(self.spectrum,self.ll,self.ul)
+        self.A1 = 1/intgrl
+        p = self.p
+        self._set_A0(p,t)
+        self._set_e1(p,t)
+        self._set_e2(p,t)
+        self._set_g1(p,t)
+        self._set_g2(p,t)
     
-    def set_stage(s,t):
-        s.stage = t
-        s.normalize(t)
+    def set_stage(self,t):
+        self.stage = t
+        self.normalize(t)
     
-    def spectrum(s,lE):
+    def spectrum(self,lE):
         """
         This function returns the particle distribution as a function of energy (energy spectrum)
         at a given stage
@@ -89,9 +89,9 @@ class energyDistribution:
             n_t_lE = the energy distribution of secondary particles.
         """
         E = np.exp(lE)
-        return s.A0*E**s.g1 / ( (E+s.e1)**s.g1 * (E+s.e2)**s.g2 )
+        return self.A0*E**self.g1 / ( (E+self.e1)**self.g1 * (E+self.e2)**self.g2 )
 
-class angularDistribution:
+class AngularDistribution:
     """
     This class contains functions related to the angular distribution
     of secondary particles.  The parameterization used is that of
@@ -106,7 +106,7 @@ class angularDistribution:
     ll = 0.
     ul = 180.
 
-    def __init__(s,lE):
+    def __init__(self,lE):
         """Set the parameterization constants for this type (log)energy. The
         angular distribution only depends on the energy not the
         particle or stage. The normalization constanct is determined
@@ -116,36 +116,36 @@ class angularDistribution:
             lE = The log of the energy (in MeV) at which the angular
                  distribution is calculated
         """
-        s.lE = lE
-        s.C0 = 1.
-        s.normalize()
+        self.lE = lE
+        self.C0 = 1.
+        self.normalize()
         
-    def _set_b1(s):
-        s.b1 = s.pz[s.pm['b11']] + s.pz[s.pm['b12']] * np.exp(s.lE)**s.pz[s.pm['b13']]
-    def _set_b2(s):
-        s.b2 = s.pz[s.pm['b21']] - s.pz[s.pm['b22']] * s.lE
-    def _set_a1(s):
-        s.a1 = s.pz[s.pm['a11']]
-    def _set_a2(s):
-        s.a2 = s.pz[s.pm['a21']] + s.pz[s.pm['a22']] * s.lE
-    def _set_sig(s):
-        s.sig = s.pz[s.pm['sig']]
+    def _set_b1(self):
+        self.b1 = self.pz[self.pm['b11']] + self.pz[self.pm['b12']] * np.exp(self.lE)**self.pz[self.pm['b13']]
+    def _set_b2(self):
+        self.b2 = self.pz[self.pm['b21']] - self.pz[self.pm['b22']] * self.lE
+    def _set_a1(self):
+        self.a1 = self.pz[self.pm['a11']]
+    def _set_a2(self):
+        self.a2 = self.pz[self.pm['a21']] + self.pz[self.pm['a22']] * self.lE
+    def _set_sig(self):
+        self.sig = self.pz[self.pm['sig']]
 
-    def set_lE(s,lE):
-        s.lE = lE
-        s.normalize()
+    def set_lE(self,lE):
+        self.lE = lE
+        self.normalize()
         
-    def normalize(s):
+    def normalize(self):
         """Set the normalization constant so that the integral over degrees is unity."""
-        s._set_b1()
-        s._set_b2()
-        s._set_a1()
-        s._set_a2()
-        s._set_sig()
-        intgrl,eps = quad(s.n_t_lE_Omega,ll,ul)
-        s.C0 = 1/intgrl
+        self._set_b1()
+        self._set_b2()
+        self._set_a1()
+        self._set_a2()
+        self._set_sig()
+        intgrl,eps = quad(self.n_t_lE_Omega,self.ll,self.ul)
+        self.C0 = 1/intgrl
         
-    def n_t_lE_Omega(s,theta):
+    def n_t_lE_Omega(self,theta):
         """
         This function returns the particle angular distribution as a angle at a given energy.
         It is independent of particle type and shower stage
@@ -156,11 +156,11 @@ class angularDistribution:
         Returns:
             n_t_lE_Omega = the angular distribution of particles
         """
-        t1 = np.exp(s.b1) * theta**s.a1
-        t2 = np.exp(s.b2) * theta**s.a2
-        mrs = -1/s.sig
-        ms = -s.sig
-        return s.C0 * (t1**mrs + t2**mrs)**ms
+        t1 = np.exp(self.b1) * theta**self.a1
+        t2 = np.exp(self.b2) * theta**self.a2
+        mrs = -1/self.sig
+        ms = -self.sig
+        return self.C0 * (t1**mrs + t2**mrs)**ms
         
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
@@ -174,9 +174,9 @@ if __name__ == '__main__':
     le = np.linspace(ll,ul,401)
     E  = np.exp(le)
 
-    ep = energyDistribution('Tot',-6)
-    ee = energyDistribution('Ele',-6)
-    pp = energyDistribution('Pos',-6)
+    ep = EnergyDistribution('Tot',-6)
+    ee = EnergyDistribution('Ele',-6)
+    pp = EnergyDistribution('Pos',-6)
     ax1 = fig.add_subplot(311)
     ax1.plot(E,ep.spectrum(le),label='Total')
     ax1.plot(E,ee.spectrum(le),label='Elect')
@@ -231,7 +231,7 @@ if __name__ == '__main__':
     lqdeg = np.linspace(np.log(ll),np.log(ul),450)
     qdeg = np.exp(lqdeg)
 
-    qd = angularDistribution(np.log(1.))
+    qd = AngularDistribution(np.log(1.))
     plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='1 MeV')
     qd.set_lE(np.log(5.))
     plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='5 MeV')
