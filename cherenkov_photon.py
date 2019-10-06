@@ -149,8 +149,8 @@ class CherenkovPhoton:
             the outer integral
         """
         ll = np.log(CherenkovPhoton.cherenkov_threshold(delta))
-        # ul = 13.8 # np.log(1.e6)
-        ul = 10.309 # np.log(3.e4)
+        ul = 13.8 # np.log(1.e6)
+        # ul = 10.309 # np.log(3.e4)
         return quad( CherenkovPhoton.outer_integrand,ll,ul,args=(theta,f_e,delta),
                      epsrel = CherenkovPhoton.outer_precision )[0]
 
@@ -202,7 +202,7 @@ if __name__ == '__main__':
     t = 0.
     f_e = EnergyDistribution('Tot',t)
     ll = np.log(CherenkovPhoton.cherenkov_threshold(delta))
-    ul = 10.309
+    ul = 13.8
     print("  CherenkovPhoton.outer_integrand(l_g,theta,f_e,delta)")
     print("  theta = %.4f, delta = %.4f, t = %.1f"%(theta,delta,t))
     print("  f_e: ",f_e)
@@ -224,15 +224,15 @@ if __name__ == '__main__':
     lgtheta,dlgtheta = np.linspace(-3,0.2,161,retstep=True)
     theta = 10**lgtheta
     dtheta = 10**(lgtheta+dlgtheta/2)-10**(lgtheta-dlgtheta/2)
-    gg_array = np.empty((11,161),dtype=float)
-    t_array = np.linspace(-10,10,11)
+    t_array = np.linspace(-20,20,3)
+    gg_t_array = np.empty((3,161),dtype=float)
     plt.figure(3)
     for i,t in enumerate(t_array):
         print("Stage %.0f"%t)
         f_e.set_stage(t)
-        gg_array[i] = np.array([CherenkovPhoton.outer_integral(q,f_e,delta) for q in theta])
-        gg_array[i] /= (gg_array[i]*dtheta).sum()
-        plt.plot(theta,gg_array[i],label='t=%.0f, delta=%.6f'%(t,delta))
+        gg_t_array[i] = np.array([CherenkovPhoton.outer_integral(q,f_e,delta) for q in theta])
+        gg_t_array[i] /= (gg_t_array[i]*dtheta).sum()
+        plt.plot(theta,gg_t_array[i],label='t=%.0f, delta=%.6f'%(t,delta))
     plt.loglog()
     plt.xlabel('Theta [rad]')
     plt.ylabel('Photon Angle Distribution')
@@ -240,3 +240,22 @@ if __name__ == '__main__':
     plt.legend()
     plt.grid()
     plt.xlim(theta[0],theta[-1])
+
+    t = -20.
+    f_e.set_stage(t)
+    delta_array = np.logspace(-8.7,-3.5,6)
+    gg_delta_array = np.empty((6,161),dtype=float)
+    plt.figure(4)
+    for i,delta in enumerate(delta_array):
+        print("Delta %.2e"%delta)
+        gg_delta_array[i] = np.array([CherenkovPhoton.outer_integral(q,f_e,delta) for q in theta])
+        gg_delta_array[i] /= (gg_delta_array[i]*dtheta).sum()
+        plt.plot(theta,gg_delta_array[i],label='t=%.0f, delta=%.6f'%(t,delta))
+    plt.loglog()
+    plt.xlabel('Theta [rad]')
+    plt.ylabel('Photon Angle Distribution')
+    plt.title('Photon Angular Distributions with t=%.0f'%t)
+    plt.legend()
+    plt.grid()
+    plt.xlim(theta[0],theta[-1])
+    
