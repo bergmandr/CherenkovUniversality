@@ -74,7 +74,7 @@ class EnergyDistribution:
         self._set_g2(p,t)
     
     def set_stage(self,t):
-        self.stage = t
+        self.t = t
         self.normalize(t)
     
     def spectrum(self,lE):
@@ -103,8 +103,9 @@ class AngularDistribution:
     #              b11   b12  b13   b21  b22  a11    a21   a22   sig
     pz = np.array([-3.73,0.92,0.210,32.9,4.84,-0.399,-8.36,0.440,3.])    
 
-    ll = 0.
-    ul = 180.
+    intlim = np.array([0,1.e-10,1.e-8,1.e-6,1.e-4,1.e-2,1.e-0,180.])
+    lls = intlim[:-1]
+    uls = intlim[1:]
 
     def __init__(self,lE):
         """Set the parameterization constants for this type (log)energy. The
@@ -142,7 +143,9 @@ class AngularDistribution:
         self._set_a1()
         self._set_a2()
         self._set_sig()
-        intgrl,eps = quad(self.n_t_lE_Omega,self.ll,self.ul)
+        intgrl = 0.
+        for ll,ul in zip(self.lls,self.uls):
+            intgrl += quad(self.n_t_lE_Omega,ll,ul)[0]
         self.C0 = 1/intgrl
         
     def n_t_lE_Omega(self,theta):
