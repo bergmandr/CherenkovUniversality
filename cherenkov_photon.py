@@ -10,6 +10,76 @@ m_e = spc.value('electron mass energy equivalent in MeV')
 class CherenkovPhoton:
     inner_precision = 1.e-5
     outer_precision = 1.e-4
+
+    def __init__(self,t,delta,ntheta=321,minlgtheta=-3.,maxlgtheta=0.2):
+        """Create a normalized Cherenkov-photon angular distribution at the
+        given shower stage, t, and with the index-of-refraction of the atmosphere
+        given by delta. By default there are 321 logarithmically spaced angular
+        points from 1 mR to pi/2 R.
+
+        Parameters:
+            t: shower stage
+            delta: difference of index-of-refraction from unity
+            ntheta: number of log-spaced theta points to create
+            minlgtheta: the minimum value of lgtheta
+            maxlgtheta: the maximum value of lgtheta
+        """
+        self.t = t
+        self.delta = delta
+        lgtheta,dlgtheta = np.linspace(minlgtheta,maxlgtheta,ntheta,retstep=True)
+        self.theta = 10**lgtheta
+        self.dtheta = 10**(lgtheta+dlgtheta/2) - 10**(lgtheta-dlgtheta/2)
+        fe = EnergyDistribution('Tot',self.t)
+        gg = np.array([CherenkovPhoton.outer_integral(q,fe,delta) for q in self.theta])
+        gg /= (gg*self.dtheta).sum()
+        self.gg = gg
+
+    def __str__(self):
+        return "CherenkovPhoton Angular Distribution at t=%.1f and delta=%.2e"%(self.t,self.delta)
+
+    def __repr__(self):
+        return "ng_t_delta_Omega(%.1f,%.2e,%d,%.2e,%.2e)"%(
+            self.t,self.delta,len(self.theta),self.theta[0],self.theta[-1])
+
+    def ng_t_delta_Omega(self,theta):
+        """Return the Cherenkov photon angular distribution at the given theta
+
+        Parameters:
+            theta: the angle at which to give the value of the angular distribution [rad]
+
+        Returns:
+            gg: the value of the angular distribution
+
+        This function interpolates between the values of the precomputed table
+        to give the desired value
+        """
+        i = np.searchsorted(self.theta,theta,side='right')
+        if type(i) is np.int64:
+            i = np.array([i])
+            theta = np.array([theta])
+            nin = 0
+        else:
+            nin = len(theta)
+        
+        j = i-1
+        lf = j<0
+        rg = i>=len(self.theta)
+        ok = (~lf)*(~rg)
+        s = np.empty_like(theta)
+        s[ok] = np.log(theta[ok]/self.theta[j[ok]]) / np.log(self.theta[i[ok]]/self.theta[j[ok]])
+        s[lf] = np.log(theta[lf]/self.theta[0])     / np.log(self.theta[1]/self.theta[0])
+        s[rg] = np.log(theta[rg]/self.theta[-2])    / np.log(self.theta[-1]/self.theta[-2])
+        y1 = np.empty_like(theta)
+        y2 = np.empty_like(theta)
+        y1[ok] = self.gg[j[ok]]
+        y2[ok] = self.gg[i[ok]]
+        y1[lf] = self.gg[0]
+        y2[lf] = self.gg[1]
+        y1[rg] = self.gg[-2]
+        y2[rg] = self.gg[-1]
+
+        y = y1*(y2/y1)**s
+        return y if nin>0 else y[0]
     
     @staticmethod
     def spherical_cosines(A,B,c):
@@ -93,7 +163,8 @@ class CherenkovPhoton:
             the inner integrand
         """
         theta_e = CherenkovPhoton.spherical_cosines(theta,theta_g,phi_e)
-        return g_e.n_t_lE_Omega(theta_e/spc.degree) /spc.degree
+        value = g_e.n_t_lE_Omega(theta_e/spc.degree) /spc.degree 
+        return value
 
     @staticmethod
     def inner_integral(theta,theta_g,g_e):
@@ -108,10 +179,17 @@ class CherenkovPhoton:
               of theta_g!)
         Returns:
             the inner integral
+
+        The inner integrand depends only on theta_e which comes from phi_e and
+        sperical cosines, which takes the cos(phi_e). Thus the integral is symmetric 
+        about phi_e = 0, and we can do the half integral [0,pi] and multiply by 2. 
+        (Rather than the full integral [-pi,pi] or [0,2pi].)
         """
-        return quad( CherenkovPhoton.inner_integrand, 0.,twopi,args=(theta,theta_g,g_e),
-                     epsrel=CherenkovPhoton.inner_precision,
-                     epsabs=CherenkovPhoton.inner_precision )[0]
+        theta_e_is_0 = ( CherenkovPhoton.spherical_cosines(theta,theta_g,0.) == 0. )
+        inner_ll = 1.e-4 if theta_e_is_0 else 0.
+        return 2.*quad( CherenkovPhoton.inner_integrand,inner_ll,np.pi,args=(theta,theta_g,g_e),
+                        epsrel=CherenkovPhoton.inner_precision,
+                        epsabs=CherenkovPhoton.inner_precision )[0]
 
     @staticmethod
     def outer_integrand(l_g,theta,f_e,delta):
@@ -133,7 +211,8 @@ class CherenkovPhoton:
         cherenkov_yield = CherenkovPhoton.cherenkov_yield(E_g,delta)
         g_e = AngularDistribution(l_g)
         inner = CherenkovPhoton.inner_integral(theta,theta_g,g_e)
-        return np.sin(theta_g) * cherenkov_yield * f_e.spectrum(l_g) * inner
+        value = np.sin(theta_g) * cherenkov_yield * f_e.spectrum(l_g) * inner 
+        return value
 
     @staticmethod
     def outer_integral(theta,f_e,delta):
@@ -150,112 +229,57 @@ class CherenkovPhoton:
         """
         ll = np.log(CherenkovPhoton.cherenkov_threshold(delta))
         ul = 13.8 # np.log(1.e6)
-        # ul = 10.309 # np.log(3.e4)
         return quad( CherenkovPhoton.outer_integrand,ll,ul,args=(theta,f_e,delta),
                      epsrel = CherenkovPhoton.outer_precision )[0]
 
+def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5):
+    """Make an list of CherenkovPhoton distributions, all with the same stage
+    but with a logrithmic array of delta values
+
+    Parameters:
+        t: the shower stage
+        n_delta: number of point to sample a different delta
+        min_lg_delta: the log10 of the minimum value of delta
+        max_lg_delta: the log10 of the maximum value of delta
+
+    Returns:
+        gg_list: A list of CherenkovPhoton objects
+    """
+    delta = np.logspace(min_lg_delta,max_lg_delta,n_delta)
+    gg_list = []
+    for i,d in enumerate(delta):
+        print("%2d %.2e"%(i,d))
+        gg_list.append(CherenkovPhoton(t,d))
+    return gg_list
+    
 if __name__ == '__main__':
+    import time
     import matplotlib.pyplot as plt
     plt.ion()
-    
-    A = 0.1; B = 0.1; c = np.pi/2
-    print("A = %6.4f, B = %6.4f,  c = %6.4f; C = %6.4f"%(A,B,c,CherenkovPhoton.spherical_cosines(0.1,0.1,np.pi/2)))
-    delta = 2.9e-4
-    print("delta = %8.6f; threshold = %5.2f MeV"%(delta,CherenkovPhoton.cherenkov_threshold(delta)))
-    E = 30.
-    print("delta = %8.6f, E = %6.2f MeV; theta_g = %6.4f rad"%(delta,E,CherenkovPhoton.cherenkov_angle(E,delta)))
-    E = 100.
-    print("delta = %8.6f, E = %6.2f MeV; theta_g = %6.4f rad"%(delta,E,CherenkovPhoton.cherenkov_angle(E,delta)))
-    E = 20.
-    print("delta = %8.6f, E = %6.2f MeV; theta_g = %6.4f rad"%(delta,E,CherenkovPhoton.cherenkov_angle(E,delta)))
-    E = 30.
-    print("delta = %8.6f, E = %6.2f MeV; Y_Ck = %6.4f"%(delta,E,CherenkovPhoton.cherenkov_yield(E,delta)))
-    E = 100.
-    print("delta = %8.6f, E = %6.2f MeV; Y_Ck = %6.4f"%(delta,E,CherenkovPhoton.cherenkov_yield(E,delta)))
-    E = 20.
-    print("delta = %8.6f, E = %6.2f MeV; Y_Ck = %6.4f"%(delta,E,CherenkovPhoton.cherenkov_yield(E,delta)))
 
-    print()
-    print("inner_integrand samples:")
-    E = 30.
-    lE = np.log(E)
-    theta = 0.01
-    theta_g = CherenkovPhoton.cherenkov_angle(E,delta)
-    g_e = AngularDistribution(lE)
-    print("  CherenkovPhoton.inner_integrand(phi_e,theta,theta_g,g_e)")
-    print("  E = %.1f, lE = %.1f, theta = %.4f, theta_g = %.4f"%(E,lE,theta,theta_g))
-    print("  g_e: ",g_e)
-    phi_e = np.linspace(0,2*np.pi,361)
-    inint = CherenkovPhoton.inner_integrand(phi_e,theta,theta_g,g_e)
-    plt.figure(1)
-    plt.plot(phi_e,inint)
-    plt.xlabel('phi_e [rad]')
-    plt.ylabel('Inner Integrand')
-    plt.title('Inner Integrand with E=%.1f, theta=%.4f, theta_g=%.4f'%(E,theta,theta_g))
-    
-    print("inner_integral:")
-    print("  CherenkovPhoton.inner_integral(theta,theta_g,g_e):")
-    print("    %.2e"%CherenkovPhoton.inner_integral(theta,theta_g,g_e))
+    start_time = time.time()
+    gg_0_sl = CherenkovPhoton(0,2.9e-4)
+    end_time = time.time()
+    print("Generated one Cherenkov Photon angular distribution in %.1f s"%(
+        end_time-start_time))
 
-    print()
-    print("outer_integrand samples:")
-    t = 0.
-    f_e = EnergyDistribution('Tot',t)
-    ll = np.log(CherenkovPhoton.cherenkov_threshold(delta))
-    ul = 13.8
-    print("  CherenkovPhoton.outer_integrand(l_g,theta,f_e,delta)")
-    print("  theta = %.4f, delta = %.4f, t = %.1f"%(theta,delta,t))
-    print("  f_e: ",f_e)
-    l_g = np.linspace(ll,ul,100)
-    E_g = np.exp(l_g)
-    outint = np.array([CherenkovPhoton.outer_integrand(l,theta,f_e,delta) for l in l_g])
-    plt.figure(2)
-    plt.plot(E_g,outint)
-    plt.loglog()
-    plt.xlabel('E_g [MeV]')
-    plt.ylabel('Outer Integrand')
-    plt.title('Outer Integrand with theta=%.4f, delta=%.4f, t=%.1f'%(theta,delta,t))
-    
-    print("outer_integral:")
-    print("  CherenkovPhoton.outer_integral(theta,f_e,delta):")
-    print("    %.2e"%CherenkovPhoton.outer_integral(theta,f_e,delta))
-
-    #log10(pi/2)=0.19612
-    lgtheta,dlgtheta = np.linspace(-3,0.2,161,retstep=True)
-    theta = 10**lgtheta
-    dtheta = 10**(lgtheta+dlgtheta/2)-10**(lgtheta-dlgtheta/2)
-    t_array = np.linspace(-20,20,3)
-    gg_t_array = np.empty((3,161),dtype=float)
-    plt.figure(3)
-    for i,t in enumerate(t_array):
-        print("Stage %.0f"%t)
-        f_e.set_stage(t)
-        gg_t_array[i] = np.array([CherenkovPhoton.outer_integral(q,f_e,delta) for q in theta])
-        gg_t_array[i] /= (gg_t_array[i]*dtheta).sum()
-        plt.plot(theta,gg_t_array[i],label='t=%.0f, delta=%.6f'%(t,delta))
-    plt.loglog()
-    plt.xlabel('Theta [rad]')
-    plt.ylabel('Photon Angle Distribution')
-    plt.title('Photon Angular Distributions with delta=%.6f'%delta)
-    plt.legend()
-    plt.grid()
-    plt.xlim(theta[0],theta[-1])
-
-    t = -20.
-    f_e.set_stage(t)
-    delta_array = np.logspace(-8.7,-3.5,6)
-    gg_delta_array = np.empty((6,161),dtype=float)
-    plt.figure(4)
-    for i,delta in enumerate(delta_array):
-        print("Delta %.2e"%delta)
-        gg_delta_array[i] = np.array([CherenkovPhoton.outer_integral(q,f_e,delta) for q in theta])
-        gg_delta_array[i] /= (gg_delta_array[i]*dtheta).sum()
-        plt.plot(theta,gg_delta_array[i],label='t=%.0f, delta=%.6f'%(t,delta))
-    plt.loglog()
-    plt.xlabel('Theta [rad]')
-    plt.ylabel('Photon Angle Distribution')
-    plt.title('Photon Angular Distributions with t=%.0f'%t)
-    plt.legend()
-    plt.grid()
-    plt.xlim(theta[0],theta[-1])
-    
+    fg = plt.figure(1,figsize=(6,8))
+    a1 = fg.add_subplot(211)
+    a1.plot(gg_0_sl.theta,gg_0_sl.gg)
+    a1.loglog()
+    a1.set_xlim(gg_0_sl.theta[0],gg_0_sl.theta[-1])
+    ymn,ymx = a1.set_ylim()
+    a1.set_ylim(1.e-5*ymx,ymx)
+    a1.grid()
+    a1.set_xlabel('Theta [rad]')
+    a1.set_ylabel('ng_t_delta_Omega [1/sr]')
+    a1.set_title(repr(gg_0_sl))
+    a2 = fg.add_subplot(212)
+    a2.plot(gg_0_sl.theta,gg_0_sl.gg)
+    a2.set_xlim(0,0.1)
+    a2.set_ylim(0,1.2*gg_0_sl.gg.max())
+    a2.grid()
+    a2.set_xlabel('Theta [rad]')
+    a2.set_ylabel('ng_t_delta_Omega [1/sr]')
+    a2.set_title(repr(gg_0_sl))
+    fg.tight_layout()
