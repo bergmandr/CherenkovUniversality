@@ -232,7 +232,8 @@ class CherenkovPhoton:
         return quad( CherenkovPhoton.outer_integrand,ll,ul,args=(theta,f_e,delta),
                      epsrel = CherenkovPhoton.outer_precision )[0]
 
-def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5):
+def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
+                               ntheta=321,minlgtheta=-3.,maxlgtheta=0.2):
     """Make an list of CherenkovPhoton distributions, all with the same stage
     but with a logrithmic array of delta values
 
@@ -249,7 +250,10 @@ def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5):
     gg_list = []
     for i,d in enumerate(delta):
         print("%2d %.2e"%(i,d))
-        gg_list.append(CherenkovPhoton(t,d))
+        gg_list.append(CherenkovPhoton(t,d,
+                                       ntheta=ntheta,
+                                       minlgtheta=minlgtheta,
+                                       maxlgtheta=maxlgtheta))
     return gg_list
     
 if __name__ == '__main__':
