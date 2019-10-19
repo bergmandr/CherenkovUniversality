@@ -232,11 +232,11 @@ class CherenkovPhoton:
         return quad( CherenkovPhoton.outer_integrand,ll,ul,args=(theta,f_e,delta),
                      epsrel = CherenkovPhoton.outer_precision )[0]
 
-def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
-                               ntheta=321,minlgtheta=-3.,maxlgtheta=0.2):
+def make_CherenkovPhoton_list(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
+                              ntheta=321,minlgtheta=-3.,maxlgtheta=0.2):
     """Make an list of CherenkovPhoton distributions, all with the same stage
     but with a logrithmic array of delta values
-
+    
     Parameters:
         t: the shower stage
         n_delta: number of point to sample a different delta
@@ -255,7 +255,46 @@ def make_CherenkovPhoton_array(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
                                        minlgtheta=minlgtheta,
                                        maxlgtheta=maxlgtheta))
     return gg_list
+
+def make_CherenkovPhoton_array(n_t=21,min_t=-20.,max_t=20.,
+                               n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
+                               n_theta=321,min_lg_theta=-3,max_lg_theta=0.2):
+    """Make an array of CherenkovPhoton distributions, with a linear array
+    of shower stages and a logrithmic array of delta values
     
+    Parameters:
+        n_t: the number of shower stages
+        min_t: the minimum shower stage
+        max_t: the maximum shower stage
+        n_delta: number of point to sample a different delta
+        min_lg_delta: the log10 of the minimum value of delta
+        max_lg_delta: the log10 of the maximum value of delta
+
+    Returns:
+        gg_array: A rank-3 numpy array of Cherenkov angular distribution values
+            with a shape (n_t, n_delta, n_theta)
+        t_array: A numpy array containing the stages used in gg_array
+        delta_array: A numpy array containing the atmospheric delta values used
+            in the gg_array
+        theta_array: A numpy array containing the angle values used in gg_array
+
+    This routine is impractical to actually use because it would take many days
+    to complete. It is intended to show the stucture of the completed gg_array.
+    """
+    t_array = np.linspace(min_t,max_t,n_t)
+    delta_array = np.logspace(min_lg_delta,max_lg_delta,n_delta)
+    theta_array = np.logspace(min_lg_theta,max_lg_theta,n_theta)
+    gg_array = np.empty((n_t,n_delta,n_theta),dtype=float)
+    for i,t in enumerate(t_array):
+        for j,d in enumerate(delta_array):
+            print("%2d %.0f %2d %.2e"%(i,ti,j,d))
+            gg = CherenkovPhoton(ti,d,
+                                 ntheta=n_theta,
+                                 minlgtheta=min_lg_theta,
+                                 maxlgtheta=max_lg_theta)
+            gg_array[i,j] = gg.gg
+    return gg_array,t_array,delta_array,theta_array
+
 if __name__ == '__main__':
     import time
     import matplotlib.pyplot as plt
