@@ -5,6 +5,8 @@ distributions of charged particles.
 These were originally written by Zane Gerber, September 2019.
 Modified by Douglas Bergman, September 2019.
 
+Modified to include Douglas Bergman's 2013 parameterization, June 2020
+
 """
 
 import numpy as np
@@ -28,9 +30,9 @@ class EnergyDistribution:
                    [0.485,0.183,8.17e-4,3.22,0.0068,106.,1.00,1.0,0.0372],  # Ele
                    [0.516,0.201,5.42e-4,4.36,0.0663,143.,0.15,2.0,0.0374]]) # Pos
 
-    ll = np.log(1.e-1)
-    ul = np.log(1.e+6)
-    
+    ll = np.log(1.e-1) #lower limit
+    ul = np.log(1.e+6) #upper limit
+
     def __init__(self,part,t):
         """
         Set the parameterization constants for this type of particle. The normalization
@@ -72,11 +74,11 @@ class EnergyDistribution:
         self._set_e2(p,t)
         self._set_g1(p,t)
         self._set_g2(p,t)
-    
+
     def set_stage(self,t):
         self.t = t
         self.normalize(t)
-    
+
     def spectrum(self,lE):
         """
         This function returns the particle distribution as a function of energy (energy spectrum)
@@ -94,20 +96,54 @@ class EnergyDistribution:
 class AngularDistribution:
     """
     This class contains functions related to the angular distribution
-    of secondary particles.  The parameterization used is that of
-    S. Lafebre et. al. (2009).
+    of secondary particles.  This class can produce an electron angular
+    distribution based on either the parameterization of Lafebre et al. or
+    Professor Bergman depending on the choice of the variable 'schema'
     """
-    # pm for parameter
-    pm = {'b11':0,'b12':1,'b13':2,'b21':3,'b22':4,'a11':5,'a21':6,'a22':7,'sig':8}
-    # pz for parameterization
-    #              b11   b12  b13   b21  b22  a11    a21   a22   sig
-    pz = np.array([-3.73,0.92,0.210,32.9,4.84,-0.399,-8.36,0.440,3.])    
+    #Bergman constants
+    pm_b = {
+        'a10' : 3773.05,
+        'a11' : 1.82945,
+        'a12' : 0.031143,
+        'a13' : 0.0129724,
+        'c10' : 163.366,
+        'c11' : 0.952228,
+        'c20' : 182.945,
+        'c21' : 0.921291,
+        'a20' : 340.308,
+        'a21' : 1.73569,
+        'a22' : 6.03581,
+        'a23' : 4.29495,
+        'a24' : 2.50626,
+        'p0'  : 0.0204,
+        'p1'  : 0.790,
+        'p2'  : 2.20,
+        'r0'  : 3.6631,
+        'r1'  : 0.131998,
+        'r2'  : -0.134479,
+        'r3'  : 0.537966,
+        'Eb'  : 10**-1.5,
+        'Ec'  : 10**-1.4,
+        'Ed'  : 10**(-0.134 / 0.538),
+    }
+    # Lafebre constants
+    pm_l = {
+        'a11' : -0.399,
+        'a21' : -8.36,
+        'a22' : 0.440,
+        'sig' : 3,
+        'b11' : -3.73,
+        'b12' : 0.92,
+        'b13' : 0.210,
+        'b21' : 32.9,
+        'b22' : 4.84,
+    }
 
     intlim = np.array([0,1.e-10,1.e-8,1.e-6,1.e-4,1.e-2,1.e-0,180.])
     lls = intlim[:-1]
     uls = intlim[1:]
 
-    def __init__(self,lE):
+    def __init__(self,lE,schema='b'):
         """Set the parameterization constants for this type (log)energy. The
         angular distribution only depends on the energy not the
         particle or stage. The normalization constanct is determined
@@ -116,38 +152,88 @@ class AngularDistribution:
         Parameters:
             lE = The log of the energy (in MeV) at which the angular
                  distribution is calculated
+            schema = either 'b' for the Bergman parameterization or 'l' for the
+                     Lafebre parameterization.
         """
-        self.lE = lE
-        self.C0 = 1.
-        self.normalize()
-        
-    def _set_b1(self):
-        self.b1 = self.pz[self.pm['b11']] + self.pz[self.pm['b12']] * np.exp(self.lE)**self.pz[self.pm['b13']]
-    def _set_b2(self):
-        self.b2 = self.pz[self.pm['b21']] - self.pz[self.pm['b22']] * self.lE
-    def _set_a1(self):
-        self.a1 = self.pz[self.pm['a11']]
-    def _set_a2(self):
-        self.a2 = self.pz[self.pm['a21']] + self.pz[self.pm['a22']] * self.lE
-    def _set_sig(self):
-        self.sig = self.pz[self.pm['sig']]
+        self.schema = schema
+        self.set_lE(lE)
+
+    # Set Lafebre constants
+    def _set_b1l(self):
+        self.b1l = self.pm_l['b11'] + self.pm_l['b12'] * self.E**self.pm_l['b13']
+    def _set_b2l(self):
+        self.b2l = self.pm_l['b21'] - self.pm_l['b22'] * self.lE
+    def _set_a1l(self):
+        self.a1l = self.pm_l['a11']
+    def _set_a2l(self):
+        self.a2l = self.pm_l['a21'] + self.pm_l['a22'] * self.lE
+    def _set_sigl(self):
+        self.sigl = self.pm_l['sig']
+
+    # Set Bergman constants
+    def _set_a1b(self):
+        self.a1b = self.pm_b['a10'] * (self.E * 1.e-3)**(self.pm_b['a11'] +
+        self.pm_b['a12'] * np.log10(self.E * 1.e-3) + self.pm_b['a13'] *
+        np.log10(self.E * 1.e-3)**2)
+    def _set_c1b(self):
+        self.c1b = self.pm_b['c10'] * (self.E * 1.e-3)**self.pm_b['c11']
+    def _set_c2b(self):
+        self.c2b = self.pm_b['c20'] * (self.E * 1.e-3)**self.pm_b['c21']
+    def _set_a2b(self):
+        if self.E  * 1.e-3 >= self.pm_b['Eb']:
+            self.a2b = self.pm_b['a20'] * (self.E * 1.e-3)**self.pm_b['a21'] + \
+            self.pm_b['a22']
+        else:
+            num = self.pm_b['a20'] * self.pm_b['Eb']**self.pm_b['a21'] + \
+            self.pm_b['a22'] - self.pm_b['a24']
+            den = self.pm_b['Eb']**self.pm_b['a23']
+            self.a2b = num / den * (self.E * 1.e-3)**self.pm_b['a23'] + \
+            self.pm_b['a24']
+    def _set_theta_0b(self):
+        if self.E * 1.e-3 >= self.pm_b['Ec']:
+            self.theta_0b = self.pm_b['p0'] * (self.E * 1.e-3)**self.pm_b['p1']
+        else:
+            self.theta_0b = self.pm_b['p0'] * self.pm_b['Ec']**(self.pm_b['p1']
+            - self.pm_b['p2']) * (self.E * 1.e-3)**self.pm_b['p2']
+    def _set_rb(self):
+        self.rb = self.pm_b['r0']
+        if self.E * 1.e-3 <= self.pm_b['Ed']:
+            self.rb += self.pm_b['r1'] * (self.E * 1.e-3)**(self.pm_b['r2'] +
+            self.pm_b['r3'] * np.log10(self.E * 1.e-3))
 
     def set_lE(self,lE):
         self.lE = lE
+        self.E = np.exp(lE)
         self.normalize()
-        
+
+    def set_schema(self,schema):
+        """
+        Reset schema and normalize
+        """
+        self.schema = schema
+        self.normalize()
+
     def normalize(self):
         """Set the normalization constant so that the integral over degrees is unity."""
-        self._set_b1()
-        self._set_b2()
-        self._set_a1()
-        self._set_a2()
-        self._set_sig()
+        self.C0 =1
+        if self.schema == 'b':
+            self._set_a1b()
+            self._set_c1b()
+            self._set_c2b()
+            self._set_a2b()
+            self._set_theta_0b()
+            self._set_rb()
+        elif self.schema == 'l':
+            self._set_b1l()
+            self._set_b2l()
+            self._set_a1l()
+            self._set_a2l()
+            self._set_sigl()
         intgrl = 0.
         for ll,ul in zip(self.lls,self.uls):
             intgrl += quad(self.n_t_lE_Omega,ll,ul)[0]
         self.C0 = 1/intgrl
-        
+
     def n_t_lE_Omega(self,theta):
         """
         This function returns the particle angular distribution as a angle at a given energy.
@@ -159,82 +245,31 @@ class AngularDistribution:
         Returns:
             n_t_lE_Omega = the angular distribution of particles
         """
-        t1 = np.exp(self.b1) * theta**self.a1
-        t2 = np.exp(self.b2) * theta**self.a2
-        mrs = -1/self.sig
-        ms = -self.sig
-        return self.C0 * (t1**mrs + t2**mrs)**ms
-        
+        dist_value = np.empty(1)
+        if self.schema == 'b':
+            theta = np.radians(theta)
+            t1 = self.a1b * np.exp(-self.c1b * theta - self.c2b * theta**2)
+            t2 = self.a2b * (1 + theta / self.theta_0b)**(-self.rb)
+            dist_value = self.C0 * (t1 + t2)
+        elif self.schema =='l':
+            t1 = np.exp(self.b1l) * theta**self.a1l
+            t2 = np.exp(self.b2l) * theta**self.a2l
+            mrs = -1/self.sigl
+            ms = -self.sigl
+            dist_value = self.C0 * (t1**mrs + t2**mrs)**ms
+        return dist_value
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.ion()
-
-    # Reproduce Fig. 2 in Lafebre
-    fig = plt.figure(1,figsize=(5,7))
-
-    ll = np.log(1.)
-    ul = np.log(1.e4)
-    le = np.linspace(ll,ul,401)
-    E  = np.exp(le)
-
-    ep = EnergyDistribution('Tot',-6)
-    ee = EnergyDistribution('Ele',-6)
-    pp = EnergyDistribution('Pos',-6)
-    ax1 = fig.add_subplot(311)
-    ax1.plot(E,ep.spectrum(le),label='Total')
-    ax1.plot(E,ee.spectrum(le),label='Elect')
-    ax1.plot(E,pp.spectrum(le),label='Posit')
-    ax1.legend(loc='upper left')
-    ax1.set_xscale('log')
-    xll,xul = ax1.set_xlim(1.,1.e4)
-    yll,yul = ax1.set_ylim()
-    ax1.set_ylim(0,yul)
-    ax1.set_ylabel('n(t;lE)')
-    ax1.text(0.5*xul,0.95*yul,'t = -6',horizontalalignment='right',verticalalignment='top')
-
-    ep.set_stage(0)
-    ee.set_stage(0)
-    pp.set_stage(0)
-
-    ax2 = fig.add_subplot(312)
-    ax2.plot(E,ep.spectrum(le),label='Total')
-    ax2.plot(E,ee.spectrum(le),label='Elect')
-    ax2.plot(E,pp.spectrum(le),label='Posit')
-    ax2.legend(loc='upper left')
-    ax2.set_xscale('log')
-    xll,xul = ax2.set_xlim(1.,1.e4)
-    yll,yul = ax2.set_ylim()
-    ax2.set_ylim(0,yul)
-    ax2.set_ylabel('n(t;lE)')
-    ax2.text(0.5*xul,0.95*yul,'t = 0',horizontalalignment='right',verticalalignment='top')
-
-    ep.set_stage(6)
-    ee.set_stage(6)
-    pp.set_stage(6)
-
-    ax3 = fig.add_subplot(313)
-    ax3.plot(E,ep.spectrum(le),label='Total')
-    ax3.plot(E,ee.spectrum(le),label='Elect')
-    ax3.plot(E,pp.spectrum(le),label='Posit')
-    ax3.legend(loc='upper left')
-    ax3.set_xscale('log')
-    xll,xul = ax3.set_xlim(1.,1.e4)
-    yll,yul = ax3.set_ylim()
-    ax3.set_ylim(0,yul)
-    ax3.set_ylabel('n(t;lE)')
-    ax3.set_xlabel('E [MeV]')
-    ax3.text(0.5*xul,0.95*yul,'t = 6',horizontalalignment='right',verticalalignment='top')
-    fig.tight_layout()
-    
-    # Reproduce Fig. 7 in Lafebre
-    fig = plt.figure(2)
 
     ll = 0.1
     ul = 45.
     lqdeg = np.linspace(np.log(ll),np.log(ul),450)
     qdeg = np.exp(lqdeg)
 
-    qd = AngularDistribution(np.log(1.))
+    plt.figure()
+    qd = AngularDistribution(np.log(1.),'l')
     plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='1 MeV')
     qd.set_lE(np.log(5.))
     plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='5 MeV')
@@ -250,3 +285,25 @@ if __name__ == '__main__':
     plt.legend()
     plt.xlabel('Theta [deg]')
     plt.ylabel('n(t;lE,Omega)')
+    plt.show()
+
+    plt.figure()
+    qd.set_schema('b')
+    qd.set_lE(np.log(1.))
+    plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='1 MeV B')
+    qd.set_lE(np.log(5.))
+    plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='5 MeV B')
+    qd.set_lE(np.log(30.))
+    plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='30 MeV B')
+    qd.set_lE(np.log(170.))
+    plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='170 MeV B')
+    qd.set_lE(np.log(1.e3))
+    plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='1 GeV B')
+    plt.loglog()
+    plt.xlim(ll,ul)
+    plt.ylim(1.e-4,1.e1)
+    plt.legend()
+    plt.xlabel('Theta [deg]')
+    plt.ylabel('n(t;lE,Omega)')
+    plt.show()
+
