@@ -60,7 +60,7 @@ class CherenkovPhoton:
             nin = 0
         else:
             nin = len(theta)
-        
+
         j = i-1
         lf = j<0
         rg = i>=len(self.theta)
@@ -80,10 +80,10 @@ class CherenkovPhoton:
 
         y = y1*(y2/y1)**s
         return y if nin>0 else y[0]
-    
+
     @staticmethod
     def spherical_cosines(A,B,c):
-        """Return the angle C in spherical geometry where ABC is a spherical 
+        """Return the angle C in spherical geometry where ABC is a spherical
         triangle, and c is the interior angle across from c.
         """
         return np.arccos( np.cos(A)*np.cos(B) + np.sin(A)*np.sin(B)*np.cos(c) )
@@ -94,7 +94,7 @@ class CherenkovPhoton:
 
         Parameters:
             delta: the index-of-refraction minus one (n-1)
-        
+
         Returns:
             E_Ck: The Cherenkov threshold energy [MeV]
         """
@@ -103,7 +103,7 @@ class CherenkovPhoton:
         gamma = 1/np.sqrt((1-beta**2))
         E_Ck = gamma*m_e
         return E_Ck
-    
+
     @staticmethod
     def cherenkov_angle(E,delta):
         """Calculate the Cherenkov angle for a given log energy and atmosphere
@@ -111,7 +111,7 @@ class CherenkovPhoton:
         Parameters:
             E: The energy for the producing electron [MeV]
             delta: the index-of-refraction minus one (n-1)
-        
+
         Returns:
             theta_g: The angle of the Cherenkov cone for this atmosphere
         """
@@ -135,7 +135,7 @@ class CherenkovPhoton:
         Parameters:
             E: The energy for the producing electron [MeV]
             delta: the index-of-refraction minus one (n-1)
-        
+
         Returns:
             Y_c: The relative Cherenkov efficiency
         """
@@ -145,25 +145,25 @@ class CherenkovPhoton:
         else:
             Y_c = max(Y_c,0.)
         return Y_c
-        
+
     @staticmethod
     def inner_integrand(phi_e,theta,theta_g,g_e):
         """The function returns the inner integrand of the Cherenkov photon
         angular distribution.
 
         Parameters:
-            phi_e: the internal angle between the shower-photon plane and the 
+            phi_e: the internal angle between the shower-photon plane and the
               electron-photon plane (this is the integration vairable)
             theta: the angle between the shower axis and the Cherenkov photon
             theta_g: the angle between the electron and the photon (the Cherenkov
               cone angle)
-            g_e: an AngularDistribution object (normalized for the energy 
+            g_e: an AngularDistribution object (normalized for the energy
               of theta_g!)
         Returns:
             the inner integrand
         """
         theta_e = CherenkovPhoton.spherical_cosines(theta,theta_g,phi_e)
-        value = g_e.n_t_lE_Omega(theta_e/spc.degree) /spc.degree 
+        value = g_e.n_t_lE_Omega(theta_e)
         return value
 
     @staticmethod
@@ -175,14 +175,14 @@ class CherenkovPhoton:
             theta: the angle between the shower axis and the Cherenkov photon
             theta_g: the angle between the electron and the photon (the Cherenkov
               cone angle)
-            g_e: an AngularDistribution object (normalized for the energy 
+            g_e: an AngularDistribution object (normalized for the energy
               of theta_g!)
         Returns:
             the inner integral
 
         The inner integrand depends only on theta_e which comes from phi_e and
-        sperical cosines, which takes the cos(phi_e). Thus the integral is symmetric 
-        about phi_e = 0, and we can do the half integral [0,pi] and multiply by 2. 
+        sperical cosines, which takes the cos(phi_e). Thus the integral is symmetric
+        about phi_e = 0, and we can do the half integral [0,pi] and multiply by 2.
         (Rather than the full integral [-pi,pi] or [0,2pi].)
         """
         theta_e_is_0 = ( CherenkovPhoton.spherical_cosines(theta,theta_g,0.) == 0. )
@@ -211,7 +211,7 @@ class CherenkovPhoton:
         cherenkov_yield = CherenkovPhoton.cherenkov_yield(E_g,delta)
         g_e = AngularDistribution(l_g)
         inner = CherenkovPhoton.inner_integral(theta,theta_g,g_e)
-        value = np.sin(theta_g) * cherenkov_yield * f_e.spectrum(l_g) * inner 
+        value = np.sin(theta_g) * cherenkov_yield * f_e.spectrum(l_g) * inner
         return value
 
     @staticmethod
@@ -236,7 +236,7 @@ def make_CherenkovPhoton_list(t,n_delta=176,min_lg_delta=-7,max_lg_delta=-3.5,
                               ntheta=321,minlgtheta=-3.,maxlgtheta=0.2):
     """Make an list of CherenkovPhoton distributions, all with the same stage
     but with a logrithmic array of delta values
-    
+
     Parameters:
         t: the shower stage
         n_delta: number of point to sample a different delta
@@ -261,7 +261,7 @@ def make_CherenkovPhoton_array(n_t=21,min_t=-20.,max_t=20.,
                                n_theta=321,min_lg_theta=-3,max_lg_theta=0.2):
     """Make an array of CherenkovPhoton distributions, with a linear array
     of shower stages and a logrithmic array of delta values
-    
+
     Parameters:
         n_t: the number of shower stages
         min_t: the minimum shower stage
@@ -301,7 +301,7 @@ if __name__ == '__main__':
     plt.ion()
 
     start_time = time.time()
-    gg_0_sl = CherenkovPhoton(0,2.9e-4)
+    gg_0_sl = CherenkovPhoton(0,3e-5)
     end_time = time.time()
     print("Generated one Cherenkov Photon angular distribution in %.1f s"%(
         end_time-start_time))
