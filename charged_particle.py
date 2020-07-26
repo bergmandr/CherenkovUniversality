@@ -132,7 +132,7 @@ class AngularDistribution:
         'b22' : 4.84,
     }
 
-    intlim = np.array([0,1.e-10,1.e-8,1.e-6,1.e-4,1.e-2,1.e-0,180.])
+    intlim = np.array([0,1.e-10,1.e-8,1.e-6,1.e-4,1.e-2,1.e-0,np.pi])
     lls = intlim[:-1]
     uls = intlim[1:]
 
@@ -207,8 +207,11 @@ class AngularDistribution:
         self.schema = schema
         self.normalize()
 
+    def norm_integrand(self,theta):
+        return self.n_t_lE_Omega(theta) * np.sin(theta) * 2 * np.pi
+
     def normalize(self):
-        """Set the normalization constant so that the integral over degrees is unity."""
+        """Set the normalization constant so that the integral over radians is unity."""
         self.C0 =1
         if self.schema == 'b':
             self._set_a1b()
@@ -225,7 +228,7 @@ class AngularDistribution:
             self._set_sigl()
         intgrl = 0.
         for ll,ul in zip(self.lls,self.uls):
-            intgrl += quad(self.n_t_lE_Omega,ll,ul)[0]
+            intgrl += quad(self.norm_integrand,ll,ul)[0]
         self.C0 = 1/intgrl
 
     def n_t_lE_Omega(self,theta):
@@ -233,7 +236,7 @@ class AngularDistribution:
         This function returns the particle angular distribution as a angle at a given energy.
         It is independent of particle type and shower stage
         Parameters:
-            theta: the angle [deg]
+            theta: the angle [rad]
         Returns:
             n_t_lE_Omega = the angular distribution of particles
         """
@@ -244,11 +247,11 @@ class AngularDistribution:
                 sig = 5.e-4 * (1000./self.EGeV)
                 dist_value = self.C0 * np.exp(-(theta**2)/(2*sig**2))
             else:
-                theta = np.radians(theta)
                 t1 = self.a1b * np.exp(-self.c1b * theta - self.c2b * theta**2)
                 t2 = self.a2b / ((1 + theta * self.theta_0b)**(self.rb))
                 dist_value = self.C0 * (t1 + t2)
         elif self.schema =='l':
+            theta = np.degrees(theta)
             t1 = np.exp(self.b1l) * theta**self.a1l
             t2 = np.exp(self.b2l) * theta**self.a2l
             mrs = -1/self.sigl
@@ -256,31 +259,47 @@ class AngularDistribution:
             dist_value = self.C0 * (t1**mrs + t2**mrs)**ms
         return dist_value
 
-    def bt1(self,theta):
-        if self.schema == 'b':
-            theta = np.radians(theta)
-            t1 = self.a1b * np.exp(-self.c1b * theta - self.c2b * theta**2)
-        return self.C0 * t1
-
-    def bt2(self,theta):
-        if self.schema == 'b':
-            theta = np.radians(theta)
-            t2 = self.a2b / ((1 + theta * self.theta_0b)**(self.rb))
-        return self.C0 * t2
-
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
-
     plt.ion()
+
+    ll = np.radians(0.1)
+    ul = np.radians(45.)
+    lqrad = np.linspace(np.log(ll),np.log(ul),450)
+    qrad = np.exp(lqrad)
+
     fig = plt.figure()
-    EMeV = np.linspace(1.e6,1.e7,10)
-    qdeg = np.linspace(0,.005,500)
-    for i in EMeV:
-        qd = AngularDistribution(np.log(i))
-        EteV = 1.e-6 * i
-        plt.plot(qdeg,qd.n_t_lE_Omega(qdeg),label='%.2f TeV'%EteV)
-    plt.xlim(0,0.001)
-    plt.ylabel('g(theta)')
-    plt.xlabel('angle (deg)')
-    plt.title('High Energy Cutoff')
+    qd = AngularDistribution(np.log(1.),'l')
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 MeV')
+    qd.set_lE(np.log(5.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='5 MeV')
+    qd.set_lE(np.log(30.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='30 MeV')
+    qd.set_lE(np.log(170.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='170 MeV')
+    qd.set_lE(np.log(1.e3))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 GeV')
+    plt.loglog()
     plt.legend()
+    plt.xlabel('Theta [rad]')
+    plt.ylabel('n(t;lE,Omega)')
+    plt.show()
+
+    fig = plt.figure()
+    qd.set_schema('b')
+    qd.set_lE(np.log(1.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 MeV B')
+    qd.set_lE(np.log(5.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='5 MeV B')
+    qd.set_lE(np.log(30.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='30 MeV B')
+    qd.set_lE(np.log(170.))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='170 MeV B')
+    qd.set_lE(np.log(1.e3))
+    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 GeV B')
+    plt.loglog()
+    plt.xlim(ll,ul)
+    plt.legend()
+    plt.xlabel('Theta [rad]')
+    plt.ylabel('n(t;lE,Omega)')
+    plt.show()
