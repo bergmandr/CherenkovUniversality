@@ -29,9 +29,10 @@ class CherenkovPhoton:
         lgtheta,dlgtheta = np.linspace(minlgtheta,maxlgtheta,ntheta,retstep=True)
         self.theta = 10**lgtheta
         self.dtheta = 10**(lgtheta+dlgtheta/2) - 10**(lgtheta-dlgtheta/2)
+        self.twopisintheta = twopi*np.sin(self.theta)
         fe = EnergyDistribution('Tot',self.t)
         gg = np.array([CherenkovPhoton.outer_integral(q,fe,delta) for q in self.theta])
-        gg /= (gg*self.dtheta).sum()
+        gg /= (gg*self.twopisintheta*self.dtheta).sum()
         self.gg = gg
 
     def __str__(self):
