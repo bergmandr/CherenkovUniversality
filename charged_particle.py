@@ -94,7 +94,7 @@ class AngularDistribution:
     distribution based on either the parameterization of Lafebre et al. or
     Professor Bergman depending on the choice of the variable 'schema'
     """
-    #Bergman constants
+    # Bergman constants
     pm_b = {
         'a10' : 3773.05,
         'a11' : 1.82945,
@@ -132,7 +132,7 @@ class AngularDistribution:
         'b22' : 4.84,
     }
 
-    intlim = np.array([0,1.e-10,1.e-8,1.e-6,1.e-4,1.e-2,1.e-0,np.pi])
+    intlim = np.array([0,1.e-11,1.e-9,1.e-7,1.e-5,1.e-3,1.e-1,np.pi])
     lls = intlim[:-1]
     uls = intlim[1:]
 
