@@ -208,7 +208,7 @@ class AngularDistribution:
         self.normalize()
 
     def norm_integrand(self,theta):
-        return self.n_t_lE_Omega(theta) * np.sin(theta) * 2 * np.pi
+        return self.n_t_lE_Omega(theta) * np.sin(theta) * 4 * np.pi
 
     def normalize(self):
         """Set the normalization constant so that the integral over radians is unity."""
