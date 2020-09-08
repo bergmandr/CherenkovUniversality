@@ -3,9 +3,7 @@ from scipy.constants import value,nano
 from cherenkov_photon import CherenkovPhoton
 from cherenkov_photon_array import CherenkovPhotonArray
 import atmosphere as at
-import matplotlib
-import matplotlib.pyplot as plt
-from matplotlib.cm import Spectral
+from Orbital_Counter_Class import OrbitalCounters
 
 class UpwardShower():
     """A class for generating upward shower profiles and their Cherenkov
@@ -23,14 +21,20 @@ class UpwardShower():
     ckarray: filename of the Cherenkov distribution table
     tel_area: surface area of the orbital telescopes (m^2)
     """
-    def __init__(self,X_max,N_max,d0,earth_emergence,azimuth=0,n_stage=1000,
+    earth_radius = 6.371e6
+    Lambda = 70
+    atm = at.Atmosphere()
+    axis_h = np.linspace(0,atm.maximum_height,1000)
+    axis_rho = atm.density(axis_h)
+    axis_delta = atm.delta(axis_h)
+
+    def __init__(self,X_max,N_max,d0,earth_emergence,azimuth=0,
                 ckarray='gg_t_delta_theta_2020_normalized.npz',tel_area = 1):
 
-        self.n_stage = n_stage
+        # self.n_stage = n_stage
         self.atmosphere = at.Atmosphere()
         self.gga = CherenkovPhotonArray(ckarray)
         self.tel_area = tel_area
-        self.earth_radius = 6.371e6 # Earth radius in meters
 
         self.reset_shower(X_max,N_max,d0,earth_emergence,azimuth=0)
 
@@ -46,84 +50,63 @@ class UpwardShower():
         self.axis_cem = np.cos(np.pi - self.zenith)
         self.crunch_numbers()
 
-    def h_to_axis_R_LOC(self,h,cos_EM_plus_90):
+    def crunch_numbers(self):
+        '''This function performs all the calculations in order.
+        '''
+        self.set_shower_axis()
+        self.select_shower_steps()
+        self.calculate_gg()
+        self.calculate_yield()
+
+    def h_to_axis_R_LOC(self,h,cos_EM):
         '''Return the length along the shower axis from the point of Earth
         emergence to the height above the surface specified
 
         Parameters:
         h: array of heights in meters
-        cos_EM_plus_90: cosine of the Earth emergence angle plus 90 degrees
+        cos_EM: cosine of the Earth emergence angle plus 90 degrees
 
         returns: r (same size as h), an array of distances along the shower axis_sp.
         '''
-        r_CoE= h + self.earth_radius # distance from the center of the earth to the specified height
-        r = self.earth_radius*cos_EM_plus_90 + np.sqrt(
-                self.earth_radius**2*cos_EM_plus_90**2-self.earth_radius**2+r_CoE**2)
+        R = self.earth_radius
+        r_CoE= h + R # distance from the center of the earth to the specified height
+        r = R*cos_EM + np.sqrt(R**2*cos_EM**2-R**2+r_CoE**2)
         return r
+
+    def flat_earth_difference(self,r,EM,CEM):
+        R = self.earth_radius
+        h_flat = r * np.sin(EM)
+        h_true = np.sqrt(r**2 + R**2 -2*r*R*CEM) - R
+        return h_true - h_flat
 
     def set_shower_axis(self):
         '''Create a table of 10000 distances and depths along the shower axis
         to interpolate into across its whole atmospheric path
         '''
-        atm = self.atmosphere
-        axis_cq = np.cos(self.zenith)
-        axis_sq = np.sin(self.zenith)
-        axis_cp = np.cos(self.azimuth)
-        axis_sp = np.sin(self.azimuth)
-        self.axis_h = np.linspace(0,atm.maximum_height,10000)
         self.axis_r = self.h_to_axis_R_LOC(self.axis_h, self.axis_cem)
-        axis_rho = atm.density(self.axis_h)
         self.axis_dr = self.axis_r[1:] - self.axis_r[:-1]
-        axis_deltaX = np.sqrt(axis_rho[1:]*axis_rho[:-1])*self.axis_dr * 1000 / 10000# converting to g/cm^2
+        axis_deltaX = np.sqrt(self.axis_rho[1:]*self.axis_rho[:-1])*self.axis_dr / 10# converting to g/cm^2
         self.axis_X = np.concatenate((np.array([0]),np.cumsum(axis_deltaX)))
-        self.axis_delta = np.nan_to_num(atm.delta(self.axis_h),nan=0)
+        self.axis_dr = np.concatenate((np.array([0]),self.axis_dr))
 
-    def interpolate_shower_steps(self):
-        '''Superimpose 2000 1 g/cm^2 depth steps onto axis X vs r curve starting
-        at the r corresponding to the height of first interaction
+
+    def select_shower_steps(self):
+        '''Select the depth indices steps where the shower is producing light,
+        i.e. where there are charged particles
+
         '''
-        self.shower_X = np.linspace(0,2000,self.n_stage)
-        self.shower_start_r = self.h_to_axis_R_LOC(self.d0, self.axis_cem)
-        self.start_depth = np.interp(self.shower_start_r,self.axis_r,self.axis_X)
-        self.shower_axis_X = self.shower_X + self.start_depth
-        self.shower_r = np.interp(self.shower_axis_X,self.axis_X,self.axis_r)
-        shower_dr = self.shower_r[1:] - self.shower_r[:-1]
-        self.shower_dr =np.concatenate((shower_dr,np.array([shower_dr[-1]])))
-        self.shower_delta = np.interp(self.shower_r,self.axis_r,self.axis_delta)
+        self.axis_start_r = self.h_to_axis_R_LOC(self.d0, self.axis_cem)
+        self.X0 = np.interp(self.axis_start_r,self.axis_r,self.axis_X)
+        self.X_max += self.X0
+        self.axis_nch = self.size(self.axis_X)
+        self.axis_nch[self.axis_nch<1.e-1] = 0
+        self.axis_t = self.stage(self.axis_X)
+        self.i_ch = np.nonzero(self.axis_nch)
+        self.n_stage = np.size(self.i_ch)
+        axis_r = self.axis_r[self.i_ch] - self.axis_start_r
+        tel_r = self.h_to_axis_R_LOC(525.e3, self.axis_cem) - self.axis_start_r
+        self.OC = OrbitalCounters(axis_r,100,100.e3,tel_r)
 
-    def set_telescope_to_axis(self,n_tel,array_width,array_height):
-        '''Set the coordinates of a line of counters in the sky
-        perpendicular to the shower axis at a height set by array height.
-        Then set the vectors from the axis to each telescope.
-
-        Parameters:
-        n_tel: number of counters
-        array_width: distance from the axis to the furthest detectors.
-        array height: height above the Earth's surface of the center of the array.
-
-        Sets class attributes:
-        (these coordinates now use the shower axis as the cartesian z axis)
-        tel_cart_vectors: vectors from first interaction point to each telescope
-        axis_cart_vectors: vectors to each point on the shower axis
-        travel_vector: cartesian vectors from each point on the shower axis to
-        each telescopes
-        travel_length: the distance between every axis point to each telescope
-        '''
-        array_z = self.h_to_axis_R_LOC(array_height, self.axis_cem)
-        self.tel_cart_vectors = np.empty([n_tel,3])
-        self.tel_cart_vectors[:,0] = np.zeros(n_tel)
-        self.tel_cart_vectors[:,1] = np.linspace(-array_width,array_width,n_tel)
-        self.tel_cart_vectors[:,2] = np.full((1,n_tel),array_z)
-        self.axis_cart_vectors = np.empty([self.n_stage,3])
-        self.axis_cart_vectors[:,0] = np.zeros(self.n_stage)
-        self.axis_cart_vectors[:,1] = np.zeros(self.n_stage)
-        self.axis_cart_vectors[:,2] = self.shower_r - self.shower_start_r
-        self.travel_vector = self.tel_cart_vectors.reshape(-1,1,3) - self.axis_cart_vectors
-        self.travel_length =  np.sqrt( (self.travel_vector**2).sum(axis=2) )
-        self.tel_n = self.travel_vector / self.travel_length[:,:,np.newaxis]
-        self.tel_cq = self.tel_n[:,:,-1] # cosines of the angles between vertical and vector from vertical height to telescope
-        self.tel_q = np.arccos(self.tel_cq) # angle between axis and vector
-        self.tel_omega = self.tel_area / self.travel_length **2
 
     def size(self,X):
         """Return the size of the shower at a slant-depth X
@@ -134,13 +117,12 @@ class UpwardShower():
         Returns:
             N: the shower size
         """
-        Lambda = 70
-        X_0 = 0
-
-        ln_axis_nch = np.log(self.N_max) + ((self.X_max-X_0)/Lambda) * (np.log(X-X_0)
-                    - np.log(self.X_max-X_0)) + ((self.X_max-X)/Lambda)
-        axis_nch = np.exp(ln_axis_nch)
-        return np.nan_to_num(axis_nch,nan=0)
+        x =         (X-self.X0)/self.Lambda
+        g0 = x>0.
+        m = (self.X_max-self.X0)/self.Lambda
+        n = np.zeros_like(x)
+        n[g0] = np.exp( m*(np.log(x[g0])-np.log(m)) - (x[g0]-m) )
+        return self.N_max * n
 
     def stage(self,X,X0=36.62):
         """Return the shower stage at a given slant-depth X. This
@@ -155,25 +137,19 @@ class UpwardShower():
         """
         return (X-self.X_max)/X0
 
-    def set_shower_GH_stage(self):
-        self.shower_nch = self.size(self.shower_X)
-        self.shower_t = self.stage(self.shower_X)
-
     def calculate_gg(self):
         '''This function sets the class attribute gg which is the value of
         the normalized Cherenkov distribution for each stage going to each
         telescope.
         '''
-        self.gg = np.empty_like(self.travel_length)
-        for i in range(self.travel_length.shape[0]):
-            for j in range(self.travel_length.shape[1]):
-                self.gg[i,j] = self.gga.interpolate(self.shower_t[j],self.shower_delta[j],self.tel_q[i,j])
-        #cut values from stages earlier than the ones explicitly tabulated
-        gg_bt = self.shower_t<self.gga.t[0]
-        self.gg[:,gg_bt] = 0
-        #cut values from stages later than the ones explicitly tabulated
-        gg_bt = self.shower_t>self.gga.t[-1]
-        self.gg[:,gg_bt] = 0
+
+        self.gg = np.empty_like(self.OC.travel_length)
+        for i in range(self.OC.travel_length.shape[0]):
+            for j in range(self.OC.travel_length.shape[1]):
+                if self.axis_t[self.i_ch][j]>self.gga.t[0] and self.axis_t[self.i_ch][j]<self.gga.t[-1]:
+                    self.gg[i,j] = self.gga.interpolate(self.axis_t[self.i_ch][j],self.axis_delta[self.i_ch][j],self.OC.tel_q[i,j])
+                else:
+                    self.gg[i,j] = 0
 
     def calculate_yield(self):
         '''This function calculates the number of Cherenkov photons at each
@@ -182,45 +158,42 @@ class UpwardShower():
         '''
         alpha_over_hbarc = 370.e2 # per eV per m, from PDG
         tel_dE =1.377602193180103 # Energy interval calculated from Cherenkov wavelengths
-        chq = CherenkovPhoton.cherenkov_angle(1.e12,self.shower_delta)
+        chq = CherenkovPhoton.cherenkov_angle(1.e12,self.axis_delta[self.i_ch])
         cy = alpha_over_hbarc*np.sin(chq)**2*tel_dE
-        tel_factor = self.shower_nch * self.shower_dr * cy
-        self.ng = self.gg * self.tel_omega * tel_factor
+        tel_factor = self.axis_nch[self.i_ch] * self.axis_dr[self.i_ch] * cy
+        self.ng = self.gg * self.OC.tel_omega * tel_factor
         self.ng_sum = self.ng.sum(axis = 1)
 
     # def calculate_times(self):
     #     axis_vertical_delay = np.cumsum((axis_delta*axis_dh))/c/spc.nano
     #     axis_time = axis_r[:-1]/c/spc.nano
 
-    def crunch_numbers(self):
-        '''This function performs all the calculations in order.
-        '''
-        self.set_shower_axis()
-        self.interpolate_shower_steps()
-        self.set_telescope_to_axis(100,100.e3,525.e3)
-        self.set_shower_GH_stage()
-        self.calculate_gg()
-        self.calculate_yield()
+
 
 
 if __name__ == '__main__':
-    us = UpwardShower(500,1.e7,1000,np.radians(5))
+    import matplotlib
+    import matplotlib.pyplot as plt
+    from matplotlib.cm import Spectral
+    us = UpwardShower(500,1.e7,5000,np.radians(5))
+    plt.ion()
     plt.figure()
     plt.plot(us.axis_r,us.axis_X,'bo')
-    plt.plot(us.shower_r,us.shower_axis_X,'ro')
+    plt.plot(us.axis_r[us.i_ch],us.axis_X[us.i_ch],'ro')
     plt.xlabel("Distance Along Axis from Earth's Surface (m)")
     plt.ylabel('grammage')
     plt.figure()
-    plt.plot(us.shower_X,us.shower_nch)
-    plt.ion()
+    plt.plot(us.axis_X[us.i_ch],us.axis_nch[us.i_ch])
+
     plt.figure()
     heights = [0,2000,4000,6000,8000,10000]
     for h in heights:
         us.reset_shower(500,1.e7,h,np.radians(5))
-        plt.plot(us.tel_cart_vectors[:,1],us.ng_sum, label='Height = %.0f'%h)
+        plt.plot(us.OC.tel_cart_vectors[:,1],us.ng_sum, label='Height = %.0f'%h)
     plt.xlabel('Counter Position [m from axis]')
     plt.ylabel('Number of Photons')
     plt.suptitle('Lateral Distribution at altitude 525 Km')
     plt.title('(5 degree Earth emergence angle)')
+    plt.legend()
     plt.grid()
     plt.show()
