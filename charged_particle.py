@@ -259,6 +259,83 @@ class AngularDistribution:
             dist_value = self.C0 * (t1**mrs + t2**mrs)**ms
         return dist_value
 
+class LateralDistribution:
+    """
+    This class contains functions related to the lateral distribution
+    of secondary particles.  The parameterization used is that of
+    S. Lafebre et. al. (2009).
+    """
+    # pm for parameter
+
+    pm = {'xp11':0,'xp12':1,'xp13':2,'zp01':3,'zp02':4,'zp03':5,'zp04':6,'zp05':7,'zp11':8,'zp12':9}
+    # pz for parameterization
+    #             xp11   xp12    xp13    zp01   zp02 zp03  zp04   zp05    zp11   zp12
+    pz = np.array([0.859,-0.0461,0.00428,0.0263,1.34,0.160,-0.0404,0.00276,0.0263,-4.33])
+
+    ll = 1.e-3 #lower limit
+    ul = 100 #upper limitl
+
+    def __init__(self,lE,t):
+        """Set the parameterization constants for this type (log)energy. The
+        angular distribution only depends on the energy not the
+        particle or stage. The normalization constanct is determined
+        automatically.
+
+        Parameters:
+            lE = The log of the energy (in MeV) at which the angular
+                 distribution is calculated
+        """
+        self.lE = lE
+        self.t = t
+        self.C0 = 1.
+        self.normalize(t)
+
+    def _set_xp1(self):
+        xp11 = self.pz[self.pm['xp11']]
+        xp12 = self.pz[self.pm['xp12']]
+        xp13 = self.pz[self.pm['xp13']]
+        self.xp1 = xp11 + xp12*self.lE**2 + xp13*self.lE**3
+
+    def _set_zp0(self,t):
+        zp01 = self.pz[self.pm['zp01']]
+        zp02 = self.pz[self.pm['zp02']]
+        zp03 = self.pz[self.pm['zp03']]
+        zp04 = self.pz[self.pm['zp04']]
+        zp05 = self.pz[self.pm['zp05']]
+        self.zp0 = zp01*t + zp02 + zp03*self.lE + zp04*self.lE**2 + zp05*self.lE**3
+
+    def _set_zp1(self,t):
+        zp11 = self.pz[self.pm['zp11']]
+        zp12 = self.pz[self.pm['zp12']]
+        self.zp1 = zp11*t + zp12
+
+    def normalize(self,t):
+        self.C0 = 1.
+        self._set_xp1()
+        self._set_zp0(t)
+        self._set_zp1(t)
+        intgrl,eps = quad(self.n_t_lE_lX,self.ll,self.ul)
+        self.C0 = 1/intgrl
+
+    def set_lE(self,lE,t):
+        self.lE = lE
+        self.t = t
+        self.normalize(t)
+
+    def n_t_lE_lX(self,X):
+        """
+        This function returns the particle lateral distribution as an
+        angle at a given energy.
+
+        Parameters:
+            X: dimensionless Moulier units
+
+        Returns:
+            n_t_lE_lX = the lateral distribution
+        """
+
+        return self.C0 * X**self.zp0 * (self.xp1 + X)**self.zp1
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     plt.ion()
