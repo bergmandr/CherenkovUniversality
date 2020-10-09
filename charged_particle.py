@@ -258,6 +258,63 @@ class AngularDistribution:
             ms = -self.sigl
             dist_value = self.C0 * (t1**mrs + t2**mrs)**ms
         return dist_value
+    
+class LateralDistributionNKG:
+    '''
+    This class implements the energy independent lateral distribution
+    parameterization.
+
+    Parameters:
+
+    t = shower stages
+    '''
+
+    pm = {'zp00':0,'zp01':1,'zp10':2,'zp11':3,'xp10':4}
+    pz = np.array([0.0238,1.069,0.0238,2.918,0.430])
+    ll = 1.e-3
+    ul = 1.e1
+
+    def __init__(self,t):
+        self.t = t
+        self.normalize(t)
+
+    def set_zp0(self,t):
+        zp00 = self.pz[self.pm['zp00']]
+        zp01 = self.pz[self.pm['zp01']]
+        self.zp0 = zp00 * t + zp01
+
+    def set_zp1(self,t):
+        zp10 = self.pz[self.pm['zp10']]
+        zp11 = self.pz[self.pm['zp11']]
+        self.zp1 = zp10 * t - zp11
+
+    def set_xp1(self):
+        self.xp1 = self.pz[self.pm['xp10']]
+
+    def n_t_lX(self,X):
+        """
+        This function returns the particle lateral distribution as a
+        function of the Moulier radius.
+
+        Parameters:
+        X = Moulier radius (dimensionless)
+
+        Returns:
+        n_t_lX = the normalized lateral distribution value at X
+        """
+        return self.C0 * X ** self.zp0 * (self.xp1 + X) ** self.zp1
+
+    def set_t(self,t):
+        self.t = t
+        self.normalize(t)
+
+    def normalize(self,t):
+        self.C0 = 1.
+        self.set_zp0(t)
+        self.set_zp1(t)
+        self.set_xp1()
+        intgrl,eps = quad(self.n_t_lX,self.ll,self.ul)
+        self.C0 = 1/intgrl
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
