@@ -1,16 +1,47 @@
-"""
-This module contains classes for creating the energy and angular
-distributions of charged particles.
-These were originally written by Zane Gerber, September 2019.
-Modified by Douglas Bergman, September 2019.
-Modified to include Douglas Bergman's 2013 parameterization, June 2020
-"""
-
 import numpy as np
 from scipy.constants import physical_constants
 from scipy.integrate import quad
+from abc import ABC, abstractmethod
 
-class EnergyDistribution:
+class EnergyDistribution(ABC):
+    '''
+    This is the abstract base class for creating energy distribution objects.
+    It contains the methods a specific parameterization needs to implement to
+    be used in the creation of Cherenkov tables.
+    '''
+    ll = np.log(1.e-1) #lower limit log(MeV)
+    ul = np.log(1.e11) #upper limit log(MeV)
+
+    def __init__(self, t: float = 0.):
+        """
+        Set the parameterization constants for this type of particle. The normalization
+        constant is determined for the given shower stage, (which can be changed later).
+        Parameters:
+            t = The shower stage for which to do the claculation
+        """
+        self.set_stage(t)
+
+    def set_stage(self,t):
+        '''This method sets the stage at which the distribution is needed
+        '''
+        self.t = t
+        self.normalize()
+
+    def normalize(self):
+        '''This method sets the normalization constant so the integral over the
+        range of allowed energies is unity
+        '''
+        self.C0 = 1.
+        intgrl,eps = quad(self.n_t_lE,self.ll,self.ul)
+        self.C0 = 1/intgrl
+
+    @abstractmethod
+    def n_t_lE(self,lE):
+        '''This method should return the distribution value at log energy lE.
+        It needs to include the prefactor self.C0 normalization constant.
+        '''
+
+class LafebreEnergyDistribution(EnergyDistribution):
     """
     This class contains functions related to the energy distribution
     of secondary particles.  The parameterizations used are those of
@@ -28,7 +59,7 @@ class EnergyDistribution:
                    [0.516,0.201,5.42e-4,4.36,0.0663,143.,0.15,2.0,0.0374]]) # Pos
 
     ll = np.log(1.e-1) #lower limit
-    ul = np.log(1.e+6) #upper limit
+    ul = np.log(1.e11) #upper limit
 
     def __init__(self,part,t):
         """
@@ -62,7 +93,7 @@ class EnergyDistribution:
         self._set_e2(p,t)
         self._set_g1(p,t)
         self._set_g2(p,t)
-        intgrl,eps = quad(self.spectrum,self.ll,self.ul)
+        intgrl,eps = quad(self.n_t_lE,self.ll,self.ul)
         self.A1 = 1/intgrl
         p = self.p
         self._set_A0(p,t)
@@ -75,7 +106,7 @@ class EnergyDistribution:
         self.t = t
         self.normalize(t)
 
-    def spectrum(self,lE):
+    def n_t_lE(self,lE):
         """
         This function returns the particle distribution as a function of energy (energy spectrum)
         at a given stage
@@ -87,14 +118,116 @@ class EnergyDistribution:
         E = np.exp(lE)
         return self.A0*E**self.g1 / ( (E+self.e1)**self.g1 * (E+self.e2)**self.g2 )
 
-class AngularDistribution:
-    """
-    This class contains functions related to the angular distribution
-    of secondary particles.  This class can produce an electron angular
-    distribution based on either the parameterization of Lafebre et al. or
-    Professor Bergman depending on the choice of the variable 'schema'
-    """
-    # Bergman constants
+class AngularDistribution(ABC):
+    '''
+    This is the abstract base class for creating angular distribution objects.
+    It contains the methods a specific parameterization needs to implement to
+    be used in the creation of Cherenkov tables.
+    '''
+    intlim = np.array([0,1.e-11,1.e-9,1.e-7,1.e-5,1.e-3,1.e-1,np.pi])
+    lls = intlim[:-1]
+    uls = intlim[1:]
+
+    def __init__(self, lE: float):
+        self.set_lE(lE)
+
+    def set_lE(self,lE):
+        '''This method sets the value of the energy and saves some useful
+        conversions as attributes.
+        '''
+        self.lE = lE #natural log of E in MeV
+        self.E = np.exp(lE) #E in MeV
+        self.EGeV = self.E * 1.e-3 #E in GeV
+        self.log10E = np.log10(self.EGeV) #commonlog of E in GeV
+        self.normalize()
+
+    def norm_integrand(self, theta: float):
+        '''This method is the integrand used in the normalization integral. The
+        angular distribution is normalized over all solid angle
+        '''
+        return self.n_t_lE_Omega(theta) * np.sin(theta) * 4 * np.pi
+
+    def normalize(self):
+        '''This method sets the normalization constant for a given set value of
+        the particle energy.
+        '''
+        self.C0 = 1.
+        intgrl = 0.
+        for ll,ul in zip(self.lls,self.uls):
+            intgrl += quad(self.norm_integrand,ll,ul)[0]
+        self.C0 = 1/intgrl
+
+    @abstractmethod
+    def n_t_lE_Omega(self, theta: float):
+        '''This method should return the value of the angular distribution at
+        a given value of theta. The distribution needs to include the
+        normalization constant attribute 'self.C0' as a prefactor, for example:
+        'return self.C0 * specific_parameterization'
+
+        Parameters:
+            theta: the angle [rad]
+        Returns:
+            n_t_lE_Omega = the angular distribution of particles
+        '''
+
+class LafebreAngularDistribution(AngularDistribution):
+    '''
+    This is the implementation of the Lafebre parameterization for the charged
+    particle angular distribution.
+    '''
+    pm_l = {
+        'a11' : -0.399,
+        'a21' : -8.36,
+        'a22' : 0.440,
+        'sig' : 3,
+        'b11' : -3.73,
+        'b12' : 0.92,
+        'b13' : 0.210,
+        'b21' : 32.9,
+        'b22' : 4.84,
+    }
+
+    @property
+    def b1l(self):
+        return self.pm_l['b11'] + self.pm_l['b12'] * self.E**self.pm_l['b13']
+
+    @property
+    def b2l(self):
+        return self.pm_l['b21'] - self.pm_l['b22'] * self.lE
+
+    @property
+    def a1l(self):
+        return self.pm_l['a11']
+
+    @property
+    def a2l(self):
+        return self.pm_l['a21'] + self.pm_l['a22'] * self.lE
+
+    @property
+    def sigl(self):
+        return self.pm_l['sig']
+
+    def n_t_lE_Omega(self, theta: float):
+        '''This is the implementation of the Lafebre angular distribution
+        parameterization.
+
+        Parameters:
+            theta: the angle [rad]
+        Returns:
+            n_t_lE_Omega = the value of the angular distribution [prob/steradian]
+        '''
+        theta = np.degrees(theta)
+        t1 = np.exp(self.b1l) * theta**self.a1l
+        t2 = np.exp(self.b2l) * theta**self.a2l
+        mrs = -1/self.sigl
+        ms = -self.sigl
+        return self.C0 * (t1**mrs + t2**mrs)**ms
+
+class BergmanAngularDistribution(AngularDistribution):
+    '''
+    This is the implementation of the Bergman parameterization for the charged
+    particle angular distribution.
+    '''
     pm_b = {
         'a10' : 3773.05,
         'a11' : 1.82945,
@@ -119,244 +252,61 @@ class AngularDistribution:
         'lb'  : -1.5,
         'lc'  : -1.4,
     }
-    # Lafebre constants
-    pm_l = {
-        'a11' : -0.399,
-        'a21' : -8.36,
-        'a22' : 0.440,
-        'sig' : 3,
-        'b11' : -3.73,
-        'b12' : 0.92,
-        'b13' : 0.210,
-        'b21' : 32.9,
-        'b22' : 4.84,
-    }
 
-    intlim = np.array([0,1.e-11,1.e-9,1.e-7,1.e-5,1.e-3,1.e-1,np.pi])
-    lls = intlim[:-1]
-    uls = intlim[1:]
+    @property
+    def a1b(self):
+        return self.pm_b['a10'] * (self.EGeV)**(self.pm_b['a11'] +
+                                                self.pm_b['a12'] * self.log10E +
+                                                self.pm_b['a13'] * self.log10E**2)
 
-    def __init__(self,lE,schema='b'):
-        """Set the parameterization constants for this type (log)energy. The
-        angular distribution only depends on the energy not the
-        particle or stage. The normalization constanct is determined
-        automatically. (It's normalized in degrees!)
-        Parameters:
-            lE = The log of the energy (in MeV) at which the angular
-                 distribution is calculated
-            schema = either 'b' for the Bergman parameterization or 'l' for the
-                     Lafebre parameterization.
-        """
-        self.schema = schema
-        self.set_lE(lE)
+    @property
+    def c1b(self):
+        return self.pm_b['c10'] * (self.EGeV)**self.pm_b['c11']
 
-    # Set Lafebre constants
-    def _set_b1l(self):
-        self.b1l = self.pm_l['b11'] + self.pm_l['b12'] * self.E**self.pm_l['b13']
-    def _set_b2l(self):
-        self.b2l = self.pm_l['b21'] - self.pm_l['b22'] * self.lE
-    def _set_a1l(self):
-        self.a1l = self.pm_l['a11']
-    def _set_a2l(self):
-        self.a2l = self.pm_l['a21'] + self.pm_l['a22'] * self.lE
-    def _set_sigl(self):
-        self.sigl = self.pm_l['sig']
+    @property
+    def c2b(self):
+        return self.pm_b['c20'] * (self.EGeV)**self.pm_b['c21']
 
-    # Set Bergman constants
-    def _set_a1b(self):
-        self.a1b = self.pm_b['a10'] * (self.EGeV)**(self.pm_b['a11'] +
-        self.pm_b['a12'] * self.log10E + self.pm_b['a13'] *
-        self.log10E**2)
-    def _set_c1b(self):
-        self.c1b = self.pm_b['c10'] * (self.EGeV)**self.pm_b['c11']
-    def _set_c2b(self):
-        self.c2b = self.pm_b['c20'] * (self.EGeV)**self.pm_b['c21']
-    def _set_a2b(self):
+    @property
+    def a2b(self):
         if self.log10E >= self.pm_b['lb']:
-            self.a2b = self.pm_b['a20'] * (self.EGeV)**self.pm_b['a21'] + \
-            self.pm_b['a22']
+            return self.pm_b['a20'] * (self.EGeV)**self.pm_b['a21'] + self.pm_b['a22']
         else:
             num = self.pm_b['a20'] * 10.**(self.pm_b['a21'] * self.pm_b['lb']) + \
             self.pm_b['a22'] - self.pm_b['a24']
             den = 10.**(self.pm_b['a23'] * self.pm_b['lb'])
-            self.a2b = (num / den) * (self.EGeV)**self.pm_b['a23'] + self.pm_b['a24']
-    def _set_theta_0b(self):
+            return (num / den) * (self.EGeV)**self.pm_b['a23'] + self.pm_b['a24']
+
+    @property
+    def theta_0b(self):
         if self.log10E >= self.pm_b['lc']:
-            self.theta_0b = self.pm_b['p0'] * (self.EGeV)**self.pm_b['p1']
+            return self.pm_b['p0'] * (self.EGeV)**self.pm_b['p1']
         else:
-            self.theta_0b = self.pm_b['p0'] * 10**(self.pm_b['lc']*(self.pm_b['p1']
+            return self.pm_b['p0'] * 10**(self.pm_b['lc']*(self.pm_b['p1']
             - self.pm_b['p2'])) * (self.EGeV)**self.pm_b['p2']
-    def _set_rb(self):
-        self.rb = self.pm_b['r0']
+
+    @property
+    def rb(self):
         ld = self.pm_b['r2'] / self.pm_b['r3']
         if self.log10E <= ld:
-            self.rb += self.pm_b['r1'] * (self.EGeV)**(self.pm_b['r2'] +
+            return self.pm_b['r0'] + self.pm_b['r1'] * (self.EGeV)**(self.pm_b['r2'] +
             self.pm_b['r3'] * self.log10E)
+        else:
+            return self.pm_b['r0']
 
-    def set_lE(self,lE):
-        self.lE = lE #natural log of E in MeV
-        self.E = np.exp(lE) #E in MeV
-        self.EGeV = self.E * 1.e-3 #E in GeV
-        self.log10E = np.log10(self.EGeV) #commonlog of E in GeV
-        self.normalize()
+    def n_t_lE_Omega(self, theta: float):
+        '''This is the implementation of the Bergman angular distribution
+        parameterization.
 
-    def set_schema(self,schema):
-        """
-        Reset schema and normalize
-        """
-        self.schema = schema
-        self.normalize()
-
-    def norm_integrand(self,theta):
-        return self.n_t_lE_Omega(theta) * np.sin(theta) * 4 * np.pi
-
-    def normalize(self):
-        """Set the normalization constant so that the integral over radians is unity."""
-        self.C0 =1
-        if self.schema == 'b':
-            self._set_a1b()
-            self._set_c1b()
-            self._set_c2b()
-            self._set_a2b()
-            self._set_theta_0b()
-            self._set_rb()
-        elif self.schema == 'l':
-            self._set_b1l()
-            self._set_b2l()
-            self._set_a1l()
-            self._set_a2l()
-            self._set_sigl()
-        intgrl = 0.
-        for ll,ul in zip(self.lls,self.uls):
-            intgrl += quad(self.norm_integrand,ll,ul)[0]
-        self.C0 = 1/intgrl
-
-    def n_t_lE_Omega(self,theta):
-        """
-        This function returns the particle angular distribution as a angle at a given energy.
-        It is independent of particle type and shower stage
         Parameters:
             theta: the angle [rad]
         Returns:
-            n_t_lE_Omega = the angular distribution of particles
-        """
-
-        dist_value = np.empty(1)
-        if self.schema == 'b':
-            if self.log10E > 3.: # if the energy is greater than 1 TeV return a narrow Gaussian
-                sig = 5.e-4 * (1000./self.EGeV)
-                dist_value = self.C0 * np.exp(-(theta**2)/(2*sig**2))
-            else:
-                t1 = self.a1b * np.exp(-self.c1b * theta - self.c2b * theta**2)
-                t2 = self.a2b / ((1 + theta * self.theta_0b)**(self.rb))
-                dist_value = self.C0 * (t1 + t2)
-        elif self.schema =='l':
-            theta = np.degrees(theta)
-            t1 = np.exp(self.b1l) * theta**self.a1l
-            t2 = np.exp(self.b2l) * theta**self.a2l
-            mrs = -1/self.sigl
-            ms = -self.sigl
-            dist_value = self.C0 * (t1**mrs + t2**mrs)**ms
-        return dist_value
-    
-class LateralDistributionNKG:
-    '''
-    This class implements the energy independent lateral distribution
-    parameterization.
-
-    Parameters:
-
-    t = shower stages
-    '''
-
-    pm = {'zp00':0,'zp01':1,'zp10':2,'zp11':3,'xp10':4}
-    pz = np.array([0.0238,1.069,0.0238,2.918,0.430])
-    ll = 1.e-3
-    ul = 1.e1
-
-    def __init__(self,t):
-        self.t = t
-        self.normalize(t)
-
-    def set_zp0(self,t):
-        zp00 = self.pz[self.pm['zp00']]
-        zp01 = self.pz[self.pm['zp01']]
-        self.zp0 = zp00 * t + zp01
-
-    def set_zp1(self,t):
-        zp10 = self.pz[self.pm['zp10']]
-        zp11 = self.pz[self.pm['zp11']]
-        self.zp1 = zp10 * t - zp11
-
-    def set_xp1(self):
-        self.xp1 = self.pz[self.pm['xp10']]
-
-    def n_t_lX(self,X):
-        """
-        This function returns the particle lateral distribution as a
-        function of the Moulier radius.
-
-        Parameters:
-        X = Moulier radius (dimensionless)
-
-        Returns:
-        n_t_lX = the normalized lateral distribution value at X
-        """
-        return self.C0 * X ** self.zp0 * (self.xp1 + X) ** self.zp1
-
-    def set_t(self,t):
-        self.t = t
-        self.normalize(t)
-
-    def normalize(self,t):
-        self.C0 = 1.
-        self.set_zp0(t)
-        self.set_zp1(t)
-        self.set_xp1()
-        intgrl,eps = quad(self.n_t_lX,self.ll,self.ul)
-        self.C0 = 1/intgrl
-
-if __name__ == '__main__':
-    import matplotlib.pyplot as plt
-    plt.ion()
-
-    ll = np.radians(0.1)
-    ul = np.radians(45.)
-    lqrad = np.linspace(np.log(ll),np.log(ul),450)
-    qrad = np.exp(lqrad)
-
-    fig = plt.figure()
-    qd = AngularDistribution(np.log(1.),'l')
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 MeV')
-    qd.set_lE(np.log(5.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='5 MeV')
-    qd.set_lE(np.log(30.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='30 MeV')
-    qd.set_lE(np.log(170.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='170 MeV')
-    qd.set_lE(np.log(1.e3))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 GeV')
-    plt.loglog()
-    plt.legend()
-    plt.xlabel('Theta [rad]')
-    plt.ylabel('n(t;lE,Omega)')
-    plt.show()
-
-    fig = plt.figure()
-    qd.set_schema('b')
-    qd.set_lE(np.log(1.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 MeV B')
-    qd.set_lE(np.log(5.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='5 MeV B')
-    qd.set_lE(np.log(30.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='30 MeV B')
-    qd.set_lE(np.log(170.))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='170 MeV B')
-    qd.set_lE(np.log(1.e3))
-    plt.plot(qrad,qd.n_t_lE_Omega(qrad),label='1 GeV B')
-    plt.loglog()
-    plt.xlim(ll,ul)
-    plt.legend()
-    plt.xlabel('Theta [rad]')
-    plt.ylabel('n(t;lE,Omega)')
-    plt.show()
+            n_t_lE_Omega = the value of the angular distribution [prob/steradian]
+        '''
+        if self.log10E > 3.: # if the energy is greater than 1 TeV return a narrow Gaussian
+            sig = 5.e-4 * (1000./self.EGeV)
+            return self.C0 * np.exp(-(theta**2)/(2*sig**2))
+        else:
+            t1 = self.a1b * np.exp(-self.c1b * theta - self.c2b * theta**2)
+            t2 = self.a2b / ((1 + theta * self.theta_0b)**(self.rb))
+            return self.C0 * (t1 + t2)
