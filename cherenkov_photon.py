@@ -2,7 +2,8 @@ import numpy as np
 from scipy.integrate import quad
 import scipy.constants as spc
 from atmosphere import *
-from charged_particle import EnergyDistribution, AngularDistribution
+from charged_particle import LafebreEnergyDistribution as EnergyDistribution
+from charged_particle import BergmanAngularDistribution as AngularDistribution
 
 twopi = 2.*np.pi
 m_e = spc.value('electron mass energy equivalent in MeV')
